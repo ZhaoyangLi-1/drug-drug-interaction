@@ -305,30 +305,41 @@ class DrugChat(BaseModel):
             return img_embeds, atts_img
 
     def forward(self, samples):
+        # Suppose the samples are list of dict extending two SMILES
+        assert len(samples) == 2, "Expected two samples representing two SMILES compounds"
         if "gnn" in self.encoder_names:
-            inputs = samples["graph"]
-            device = inputs.x.device
+            graph1, graph2 = samples[0]['graph'], samples[1]['graph']
+            device = graph1.x.device
+            inputs1 = {"graph": graph1}
+            inputs2 = {"graph": graph2}
         if "image_mol" in self.encoder_names:
-            inputs = samples["image"]
-            device = inputs.device
+            image1, image2 = samples[0]['image'], samples[1]['image']
+            device = image1.device
+            inputs1 = {"image": image1}
+            inputs2 = {"image": image2}
         if "feat" in self.encoder_names:
             # no encoder
             device = list(v for v in samples.values() if isinstance(v, torch.Tensor))[0].device
 
-        img_embeds, atts_img = self.encode_img(samples, device)
+        img_embeds1, atts_img1 = self.encode_img(inputs1, device)
+        img_embeds2, atts_img2 = self.encode_img(inputs2, device)
+
+        combined_img_embeds = torch.cat([img_embeds1, img_embeds2], dim=1)
+        combined_atts_img = torch.cat([atts_img1, atts_img2], dim=1)
 
         assert 'question' in samples
-        if 'question' in samples:
-            # assert len(samples['question']) == 1, "not supporting batch mode yet"
-            vqa_prompt = ['###Human: <compound><compoundHere></compound> ' + qq + "###Assistant: " for qq in samples['question']]
-            img_embeds, atts_img = self.prompt_wrap(img_embeds, atts_img, vqa_prompt)
+        if 'question' in samples[0] and 'question' in samples[1]:
+            # Combine the questions for the two drugs into a single prompt
+            vqa_prompt = ['###Human: <compound1><compoundHere></compound1> ' + samples[0]['question'] + 
+                        " ###Human: <compound2><compoundHere></compound2> " + samples[1]['question'] + 
+                        "###Assistant:"]
+            combined_img_embeds, combined_atts_img = self.prompt_wrap(combined_img_embeds, combined_atts_img, vqa_prompt)
         elif self.prompt_list:
             prompt = random.choice(self.prompt_list)
-            img_embeds, atts_img = self.prompt_wrap(img_embeds, atts_img, [prompt])
+            combined_img_embeds, combined_atts_img = self.prompt_wrap(combined_img_embeds, combined_atts_img, [prompt])
 
         self.llama_tokenizer.padding_side = "right"
-
-        text = [t + self.end_sym for t in samples["text_input"]]
+        text = [t + self.end_sym for t in samples[0]["text_input"] + samples[1]["text_input"]]
 
         to_regress_tokens = self.llama_tokenizer(
             text,
@@ -343,26 +354,28 @@ class DrugChat(BaseModel):
             to_regress_tokens.input_ids == self.llama_tokenizer.pad_token_id, -100
         )
 
+        # Prepare the empty targets
         empty_targets = (
-            torch.ones([atts_img.shape[0], atts_img.shape[1]+1],
-                       dtype=torch.long).to(device).fill_(-100)  # plus one for bos
+            torch.ones([combined_atts_img.shape[0], combined_atts_img.shape[1]+1],
+                    dtype=torch.long).to(device).fill_(-100)  # plus one for bos
         )
         targets = torch.cat([empty_targets, targets], dim=1)
 
-        batch_size = img_embeds.shape[0]
+        # Prepare bos tokens and embeddings
+        batch_size = combined_img_embeds.shape[0]
         bos = torch.ones([batch_size, 1],
-                         dtype=to_regress_tokens.input_ids.dtype,
-                         device=to_regress_tokens.input_ids.device) * self.llama_tokenizer.bos_token_id
+                        dtype=to_regress_tokens.input_ids.dtype,
+                        device=to_regress_tokens.input_ids.device) * self.llama_tokenizer.bos_token_id
         bos_embeds = self.llama_embed_tokens(bos)
-        atts_bos = atts_img[:, :1]
+        atts_bos = combined_atts_img[:, :1]
 
+        # Embed the tokens and prepare for LLM input
         to_regress_embeds = self.llama_embed_tokens(to_regress_tokens.input_ids)
-        img_embeds = img_embeds.to(dtype=bos_embeds.dtype)
-        inputs_embeds = torch.cat([bos_embeds, img_embeds, to_regress_embeds], dim=1)
-        attention_mask = torch.cat([atts_bos, atts_img, to_regress_tokens.attention_mask], dim=1)
-        # embs = torch.cat([bos_embeds, img_embeds], dim=1)
-        # tt = self.gen_(embs)
+        combined_img_embeds = combined_img_embeds.to(dtype=bos_embeds.dtype)
+        inputs_embeds = torch.cat([bos_embeds, combined_img_embeds, to_regress_embeds], dim=1)
+        attention_mask = torch.cat([atts_bos, combined_atts_img, to_regress_tokens.attention_mask], dim=1)
 
+        # Generate the output using the LLM
         with self.maybe_autocast():
             outputs = self.llama_model(
                 inputs_embeds=inputs_embeds,
