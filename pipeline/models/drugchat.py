@@ -329,7 +329,7 @@ class DrugChat(BaseModel):
         assert 'question' in samples
         if 'question' in samples:
             # Combine the questions for the two drugs into a single prompt
-            vqa_prompt = ['###Human: <compound1><compoundHere></compound1> ' + "###Human: <compound2><compoundHere></compound2>" + qq + "###Assistant: " for qq in samples['question']]
+            vqa_prompt = ['###Human: <compound1><compoundHere></compound1> ' + "<compound2><compoundHere></compound2> " + qq + "###Assistant: " for qq in samples['question']]
             combined_img_embeds, combined_atts_img = self.prompt_wrap(combined_img_embeds, combined_atts_img, vqa_prompt)
         elif self.prompt_list:
             prompt = random.choice(self.prompt_list)
