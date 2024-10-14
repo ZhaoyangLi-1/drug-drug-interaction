@@ -305,15 +305,14 @@ class DrugChat(BaseModel):
             return img_embeds, atts_img
 
     def forward(self, samples):
-        # Suppose the samples are list of dict extending two SMILES
-        assert len(samples) == 2, "Expected two samples representing two SMILES compounds"
+        # Suppose the samples['graph'] are a list of two drugs and samples['image'] are a list of two drugs
         if "gnn" in self.encoder_names:
-            graph1, graph2 = samples[0]['graph'], samples[1]['graph']
+            graph1, graph2 = samples['graph'][0], samples['graph'][1]
             device = graph1.x.device
             inputs1 = {"graph": graph1}
             inputs2 = {"graph": graph2}
         if "image_mol" in self.encoder_names:
-            image1, image2 = samples[0]['image'], samples[1]['image']
+            image1, image2 = samples['image'][0], samples['image'][1]
             device = image1.device
             inputs1 = {"image": image1}
             inputs2 = {"image": image2}
@@ -328,18 +327,16 @@ class DrugChat(BaseModel):
         combined_atts_img = torch.cat([atts_img1, atts_img2], dim=1)
 
         assert 'question' in samples
-        if 'question' in samples[0] and 'question' in samples[1]:
+        if 'question' in samples:
             # Combine the questions for the two drugs into a single prompt
-            vqa_prompt = ['###Human: <compound1><compoundHere></compound1> ' + samples[0]['question'] + 
-                        " ###Human: <compound2><compoundHere></compound2> " + samples[1]['question'] + 
-                        "###Assistant:"]
+            vqa_prompt = ['###Human: <compound1><compoundHere></compound1> ' + "###Human: <compound2><compoundHere></compound2>" + qq + "###Assistant: " for qq in samples['question']]
             combined_img_embeds, combined_atts_img = self.prompt_wrap(combined_img_embeds, combined_atts_img, vqa_prompt)
         elif self.prompt_list:
             prompt = random.choice(self.prompt_list)
             combined_img_embeds, combined_atts_img = self.prompt_wrap(combined_img_embeds, combined_atts_img, [prompt])
 
         self.llama_tokenizer.padding_side = "right"
-        text = [t + self.end_sym for t in samples[0]["text_input"] + samples[1]["text_input"]]
+        text = [t + self.end_sym for t in samples["text_input"]]
 
         to_regress_tokens = self.llama_tokenizer(
             text,
