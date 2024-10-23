@@ -14,3 +14,4 @@ vicuna-7b-delta-v0
 vicuna-13b-delta-v0
 vicuna-weights
 convert_llama_weights_to_hf.py
+try.py
