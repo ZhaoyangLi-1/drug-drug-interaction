@@ -15,6 +15,7 @@ class MultimodalDataset(Dataset):
         super().__init__()
         self.use_image = use_image
         self.use_graph = use_graph
+        breakpoint()
         jsonpath = os.path.join(datapath, "smiles_img_qa.json")
         print(f"Using {jsonpath=}")
         with open(jsonpath, "rt") as f:

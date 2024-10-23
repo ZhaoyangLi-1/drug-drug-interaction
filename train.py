@@ -39,7 +39,8 @@ warnings.filterwarnings('ignore', message='Recall and F-score are ill-defined*')
 def parse_args():
     parser = argparse.ArgumentParser(description="Training")
 
-    parser.add_argument("--cfg-path", required=True, help="path to configuration file.")
+    # parser.add_argument("--cfg-path", required=True, help="path to configuration file.")
+    parser.add_argument("--cfg-path", type=str, default="/home/zhaoyang/project/drugchat/train_configs/drugchat.yaml", help="path to configuration file.")
     parser.add_argument(
         "--options",
         nargs="+",
@@ -81,6 +82,7 @@ def main():
 
     # set before init_distributed_mode() to ensure the same job_id shared across all ranks.
     job_id = now()
+    breakpoint()
 
     cfg = Config(parse_args())
 
@@ -97,6 +99,7 @@ def main():
     datasets = task.build_datasets(cfg)
     model = task.build_model(cfg)
 
+    breakpoint()
     runner = get_runner_class(cfg)(
         cfg=cfg, job_id=job_id, task=task, model=model, datasets=datasets
     )

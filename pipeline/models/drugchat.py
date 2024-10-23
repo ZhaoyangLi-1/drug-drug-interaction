@@ -285,27 +285,46 @@ class DrugChat(BaseModel):
         node_repr = torch.stack([torch.cat([node, pad.expand(pz, -1)]) for pz, node in zip(pad_size, nodes)])
         return node_repr
 
-    def prompt_wrap(self, img_embeds, atts_img, prompts):
+    def prompt_wrap(self, img_embeds1, img_embeds2, atts_img1, atts_img2, prompts):
         if prompts:
-            batch_size = img_embeds.shape[0]
+            batch_size = img_embeds1.shape[0]
+            
             ps = [prompt.split('<compoundHere>') for prompt in prompts]
-            p_before, p_after = list(zip(*ps))
+            p_before, p_middle, p_after = list(zip(*ps))
+            assert all(len(p) == 3 for p in ps), "Each prompt must contain two <compoundHere> placeholders."
+            
             p_before_tokens = self.llama_tokenizer(
-                p_before, padding="longest", return_tensors="pt", add_special_tokens=False).to(img_embeds.device)
+                p_before, padding="longest", return_tensors="pt", add_special_tokens=False
+            ).to(img_embeds1.device)
+            p_between_tokens = self.llama_tokenizer(
+                p_between, padding="longest", return_tensors="pt", add_special_tokens=False
+            ).to(img_embeds1.device)
             p_after_tokens = self.llama_tokenizer(
-                p_after, padding="longest", return_tensors="pt", add_special_tokens=False).to(img_embeds.device)
-            p_before_embeds = self.llama_embed_tokens(p_before_tokens.input_ids)#.expand(batch_size, -1, -1)
-            p_after_embeds = self.llama_embed_tokens(p_after_tokens.input_ids)#.expand(batch_size, -1, -1)
+                p_after, padding="longest", return_tensors="pt", add_special_tokens=False
+            ).to(img_embeds1.device)
+            
+            p_before_embeds = self.llama_embed_tokens(p_before_tokens.input_ids)
+            p_between_embeds = self.llama_embed_tokens(p_between_tokens.input_ids)
+            p_after_embeds = self.llama_embed_tokens(p_after_tokens.input_ids)
+                
             if self.soft_prompt is not None:
-                img_embeds = torch.cat([img_embeds, self.soft_prompt.expand(batch_size, -1, -1)], 1)
-            wrapped_img_embeds = torch.cat([p_before_embeds, img_embeds, p_after_embeds], dim=1)
+                img_embeds1 = torch.cat([img_embeds1, self.soft_prompt.expand(batch_size, -1, -1)], 1)
+                img_embeds2 = torch.cat([img_embeds2, self.soft_prompt.expand(batch_size, -1, -1)], 1)
+            
+            wrapped_img_embeds = torch.cat(
+                [p_before_embeds, img_embeds1, p_between_embeds, img_embeds2, p_after_embeds], dim=1
+            )
+            
+            atts_img = torch.cat([atts_img1, atts_img2], dim=1)
             wrapped_atts_img = atts_img[:, :1].expand(-1, wrapped_img_embeds.shape[1])
             return wrapped_img_embeds, wrapped_atts_img
         else:
+            img_embeds = torch.cat([img_embeds1, img_embeds2], dim=1)
+            atts_img = torch.cat([atts_img1, atts_img2], dim=1)
             return img_embeds, atts_img
 
     def forward(self, samples):
-        # Suppose the samples['graph'] are a list of two drugs and samples['image'] are a list of two drugs
+        # Suppose the samples['graph'] are a list of two drugs， and samples['image'] are a list of two drugs
         if "gnn" in self.encoder_names:
             graph1, graph2 = samples['graph'][0], samples['graph'][1]
             device = graph1.x.device
@@ -323,17 +342,21 @@ class DrugChat(BaseModel):
         img_embeds1, atts_img1 = self.encode_img(inputs1, device)
         img_embeds2, atts_img2 = self.encode_img(inputs2, device)
 
-        combined_img_embeds = torch.cat([img_embeds1, img_embeds2], dim=1)
-        combined_atts_img = torch.cat([atts_img1, atts_img2], dim=1)
+        # combined_img_embeds = torch.cat([img_embeds1, img_embeds2], dim=1)
+        # combined_atts_img = torch.cat([atts_img1, atts_img2], dim=1)
 
         assert 'question' in samples
         if 'question' in samples:
             # Combine the questions for the two drugs into a single prompt
             vqa_prompt = ["###Human: <compound1><compoundHere></compound1> " + "<compound2><compoundHere></compound2> " + qq + "###Assistant: " for qq in samples['question']]
-            combined_img_embeds, combined_atts_img = self.prompt_wrap(combined_img_embeds, combined_atts_img, vqa_prompt)
+            combined_img_embeds, combined_atts_img = self.prompt_wrap(
+                img_embeds1, img_embeds2, atts_img1, atts_img2, vqa_prompt
+            )
         elif self.prompt_list:
             prompt = random.choice(self.prompt_list)
-            combined_img_embeds, combined_atts_img = self.prompt_wrap(combined_img_embeds, combined_atts_img, [prompt])
+            combined_img_embeds, combined_atts_img = self.prompt_wrap(
+                img_embeds1, img_embeds2, atts_img1, atts_img2, [prompt]
+            )
 
         self.llama_tokenizer.padding_side = "right"
         text = [t + self.end_sym for t in samples["text_input"]]

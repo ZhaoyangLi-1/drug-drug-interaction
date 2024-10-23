@@ -3,7 +3,7 @@ model:
   model_type: pretrain_vicuna
   freeze_gnn: true
   freeze_image_mol: true
-  max_txt_len: 160
+  max_txt_len: 400
   low_resource: False
   end_sym: "###"
   prompt_path: "prompts/alignment.txt"
@@ -20,8 +20,8 @@ model:
   use_mlp: true
 
 datasets:
-  chembl:
-    label: "ChEMBL data"
+  drug-drug-interaction:
+    label: "drug to drug Interaction data"
     type: default
     vis_processor:
       train:
@@ -34,28 +34,11 @@ datasets:
     - image
     - graph
     build_info:
-      storage: data_public/ChEMBL/train
-      storage_valid: data_public/ChEMBL/val
-      storage_test: data_public/ChEMBL/test
+      storage: drug_drug_data/train
+      storage_valid: drug_drug_data/val
+      storage_test: drug_drug_data/test
     sample_ratio: 100
-  drugbank:
-    label: "DrugBank data"
-    type: default
-    vis_processor:
-      train:
-        name: "blip2_image_train"
-        image_size: 224
-    text_processor:
-      train:
-        name: "blip_caption"
-    data_type:
-    - image
-    - graph
-    build_info:
-      storage: data_public/DrugBank/train
-      storage_valid: data_public/DrugBank/val
-      storage_test: data_public/DrugBank/test
-    sample_ratio: 100
+
 
 run:
   task: image_text_pretrain
