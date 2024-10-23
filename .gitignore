@@ -7,3 +7,8 @@ ckpt
 *results
 results*
 data_public
+drug_drug_data
+llama-7b-hf
+llama-13b-hf
+vicuna-7b-delta-v0
+vicuna-13b-delta-v0
