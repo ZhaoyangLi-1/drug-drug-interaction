@@ -18,6 +18,8 @@ from transformers import StoppingCriteria, StoppingCriteriaList
 from pipeline.models.image_mol import ImageMol
 from peft import LoraConfig, get_peft_model, LoraModel
 import pickle, os
+from torch_geometric.data import Batch
+
 
 class StoppingCriteriaSub(StoppingCriteria):
 
@@ -208,40 +210,46 @@ class DrugChat(BaseModel):
         if "image_mol" in self.encoder_names:
             self.image_mol.to("cpu")
             self.image_mol.float()
-
+    
     def encode_img(self, inputs, device, do_proj=True):
         """
         Args:
             inputs (dict)
         """
         if "gnn" in self.encoder_names:
-            graph = inputs['graph']
-            device = graph.x.device
+            graph_list = inputs['graph']
+            batch_graph = Batch.from_data_list(graph_list).to(device)
+            
             if self.low_resource:
                 self.vit_to_cpu()
-                graph = graph.to("cpu")
-
-            graph_feat = self.gnn(graph).to(device)
+                batch_graph = batch_graph.to("cpu")
+                
+            graph_feat = self.gnn(batch_graph).to(device)
             if not self.use_graph_agg:
-                graph_feat = self.pad_node(graph, graph_feat)
+                graph_feat = self.pad_node(batch_graph, graph_feat)
+            
             feat = graph_feat
             inputs["feat"] = feat
             inputs["graph_feat"] = feat
+
         if "image_mol" in self.encoder_names:
-            image = inputs['image']
-            device = image.device
+            image_batch = inputs['image'].to(device)
+            
             if self.low_resource:
                 self.vit_to_cpu()
-                image = image.to("cpu")
-            feat = self.image_mol(image).to(device)
+                image_batch = image_batch.to("cpu")
+                
+            feat = self.image_mol(image_batch).to(device)
             feat = feat.unsqueeze(1)
             inputs["feat"] = feat
             inputs["image_feat"] = feat
-        
+
         if do_proj:
             inputs_llama, atts_llama = self.proj_feat(inputs, device)
             return inputs_llama, atts_llama
+        
         return inputs
+
 
     def encode_img_infer(self, inputs, device, autocast=False, autocast_proj=False):
         """
@@ -288,33 +296,33 @@ class DrugChat(BaseModel):
     def prompt_wrap(self, img_embeds1, img_embeds2, atts_img1, atts_img2, prompts):
         if prompts:
             batch_size = img_embeds1.shape[0]
-            
+
             ps = [prompt.split('<compoundHere>') for prompt in prompts]
-            p_before, p_middle, p_after = list(zip(*ps))
+            p_before, p_between, p_after = list(zip(*ps))
             assert all(len(p) == 3 for p in ps), "Each prompt must contain two <compoundHere> placeholders."
-            
+
             p_before_tokens = self.llama_tokenizer(
-                p_before, padding="longest", return_tensors="pt", add_special_tokens=False
+                list(p_before), padding="longest", return_tensors="pt", add_special_tokens=False
             ).to(img_embeds1.device)
             p_between_tokens = self.llama_tokenizer(
-                p_between, padding="longest", return_tensors="pt", add_special_tokens=False
+                list(p_between), padding="longest", return_tensors="pt", add_special_tokens=False
             ).to(img_embeds1.device)
             p_after_tokens = self.llama_tokenizer(
-                p_after, padding="longest", return_tensors="pt", add_special_tokens=False
+                list(p_after), padding="longest", return_tensors="pt", add_special_tokens=False
             ).to(img_embeds1.device)
             
-            p_before_embeds = self.llama_embed_tokens(p_before_tokens.input_ids)
-            p_between_embeds = self.llama_embed_tokens(p_between_tokens.input_ids)
-            p_after_embeds = self.llama_embed_tokens(p_after_tokens.input_ids)
-                
+            p_before_embeds = self.llama_embed_tokens(p_before_tokens.input_ids).expand(batch_size, -1, -1)
+            p_between_embeds = self.llama_embed_tokens(p_between_tokens.input_ids).expand(batch_size, -1, -1)
+            p_after_embeds = self.llama_embed_tokens(p_after_tokens.input_ids).expand(batch_size, -1, -1)
+            
+
             if self.soft_prompt is not None:
                 img_embeds1 = torch.cat([img_embeds1, self.soft_prompt.expand(batch_size, -1, -1)], 1)
                 img_embeds2 = torch.cat([img_embeds2, self.soft_prompt.expand(batch_size, -1, -1)], 1)
-            
+                
             wrapped_img_embeds = torch.cat(
                 [p_before_embeds, img_embeds1, p_between_embeds, img_embeds2, p_after_embeds], dim=1
             )
-            
             atts_img = torch.cat([atts_img1, atts_img2], dim=1)
             wrapped_atts_img = atts_img[:, :1].expand(-1, wrapped_img_embeds.shape[1])
             return wrapped_img_embeds, wrapped_atts_img
@@ -323,32 +331,34 @@ class DrugChat(BaseModel):
             atts_img = torch.cat([atts_img1, atts_img2], dim=1)
             return img_embeds, atts_img
 
+
     def forward(self, samples):
-        # Suppose the samples['graph'] are a list of two drugs， and samples['image'] are a list of two drugs
+        local_rank = int(os.environ.get("LOCAL_RANK", 0))
+        device = torch.device(f"cuda:{local_rank}")
+        inputs1, inputs2 = {}, {}
         if "gnn" in self.encoder_names:
-            graph1, graph2 = samples['graph'][0], samples['graph'][1]
-            device = graph1.x.device
-            inputs1 = {"graph": graph1}
-            inputs2 = {"graph": graph2}
+            graph_pairs = [[pair[0].to(device), pair[1].to(device)] for pair in samples['graph']]
+            inputs1['graph'] = [pair[0] for pair in graph_pairs]
+            inputs2['graph'] = [pair[1] for pair in graph_pairs]
+        else:
+            inputs1, inputs2 = {}, {}
+
         if "image_mol" in self.encoder_names:
-            image1, image2 = samples['image'][0], samples['image'][1]
-            device = image1.device
-            inputs1 = {"image": image1}
-            inputs2 = {"image": image2}
+            image_pairs = [[pair[0].to(device), pair[1].to(device)] for pair in samples['image']]
+            inputs1['image'] = torch.stack([pair[0] for pair in image_pairs], dim=0)
+            inputs2['image'] = torch.stack([pair[1] for pair in image_pairs], dim=0)
+
         if "feat" in self.encoder_names:
-            # no encoder
             device = list(v for v in samples.values() if isinstance(v, torch.Tensor))[0].device
 
         img_embeds1, atts_img1 = self.encode_img(inputs1, device)
         img_embeds2, atts_img2 = self.encode_img(inputs2, device)
-
-        # combined_img_embeds = torch.cat([img_embeds1, img_embeds2], dim=1)
-        # combined_atts_img = torch.cat([atts_img1, atts_img2], dim=1)
-
+        
         assert 'question' in samples
-        if 'question' in samples:
-            # Combine the questions for the two drugs into a single prompt
-            vqa_prompt = ["###Human: <compound1><compoundHere></compound1> " + "<compound2><compoundHere></compound2> " + qq + "###Assistant: " for qq in samples['question']]
+        if 'question' in samples and samples['question'] is not None:
+            vqa_prompt = ["###Human: <compound1><compoundHere></compound1> " +
+                        "<compound2><compoundHere></compound2> " + qq + "###Assistant: "
+                        for qq in samples['question']]
             combined_img_embeds, combined_atts_img = self.prompt_wrap(
                 img_embeds1, img_embeds2, atts_img1, atts_img2, vqa_prompt
             )
@@ -360,7 +370,6 @@ class DrugChat(BaseModel):
 
         self.llama_tokenizer.padding_side = "right"
         text = [t + self.end_sym for t in samples["text_input"]]
-
         to_regress_tokens = self.llama_tokenizer(
             text,
             return_tensors="pt",
@@ -374,14 +383,12 @@ class DrugChat(BaseModel):
             to_regress_tokens.input_ids == self.llama_tokenizer.pad_token_id, -100
         )
 
-        # Prepare the empty targets
         empty_targets = (
             torch.ones([combined_atts_img.shape[0], combined_atts_img.shape[1]+1],
-                    dtype=torch.long).to(device).fill_(-100)  # plus one for bos
+                    dtype=torch.long).to(device).fill_(-100)
         )
         targets = torch.cat([empty_targets, targets], dim=1)
 
-        # Prepare bos tokens and embeddings
         batch_size = combined_img_embeds.shape[0]
         bos = torch.ones([batch_size, 1],
                         dtype=to_regress_tokens.input_ids.dtype,
@@ -389,13 +396,11 @@ class DrugChat(BaseModel):
         bos_embeds = self.llama_embed_tokens(bos)
         atts_bos = combined_atts_img[:, :1]
 
-        # Embed the tokens and prepare for LLM input
         to_regress_embeds = self.llama_embed_tokens(to_regress_tokens.input_ids)
         combined_img_embeds = combined_img_embeds.to(dtype=bos_embeds.dtype)
         inputs_embeds = torch.cat([bos_embeds, combined_img_embeds, to_regress_embeds], dim=1)
         attention_mask = torch.cat([atts_bos, combined_atts_img, to_regress_tokens.attention_mask], dim=1)
 
-        # Generate the output using the LLM
         with self.maybe_autocast():
             outputs = self.llama_model(
                 inputs_embeds=inputs_embeds,
@@ -403,9 +408,10 @@ class DrugChat(BaseModel):
                 return_dict=True,
                 labels=targets,
             )
+        
         loss = outputs.loss
-
         return {"loss": loss}
+
 
     def gen_(self, embs):
         """

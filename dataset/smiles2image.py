@@ -3,6 +3,7 @@ import json
 import os
 from rdkit import Chem
 from rdkit.Chem import Draw
+from tqdm import tqdm
 
 
 def Smiles2Img(smis, size=224, savePath=None):
@@ -28,15 +29,18 @@ def main(smiles_path, save_dir, start_index):
     
     out_js = {}
     i = 0
-    for _, (smi, qa) in enumerate(js.items()):
-        idx = i + start_index
-        save_path = os.path.join(save_dir, f"img_{idx}.png")
-        try:
-            Smiles2Img(smi, savePath=save_path)
-        except:
-            print(f"smiles: {smi}")
-            continue
-        out_js[idx] = [smi, qa]
+    for _, (smis_string, qa) in enumerate(tqdm(js.items(), desc="Processing")):
+        pair_idx = i + start_index
+        smis = smis_string.split("|")
+        
+        for smi_idx, smi in enumerate(smis):
+            save_path = os.path.join(save_dir, f"img_{pair_idx}_{smi_idx}.png")
+            try:
+                Smiles2Img(smi, savePath=save_path)
+            except:
+                print(f"smiles: {smi}")
+                continue
+        out_js[pair_idx] = [smis_string, qa]
         i += 1
 
     out_js_path = os.path.join(save_dir, "smiles_img_qa.json")

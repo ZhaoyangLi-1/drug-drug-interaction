@@ -35,6 +35,8 @@ import warnings
 warnings.filterwarnings('ignore', message='Precision and F-score are ill-defined*')
 warnings.filterwarnings('ignore', message='Recall and F-score are ill-defined*')
 
+import wandb
+
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Training")
@@ -82,7 +84,7 @@ def main():
 
     # set before init_distributed_mode() to ensure the same job_id shared across all ranks.
     job_id = now()
-    breakpoint()
+    
 
     cfg = Config(parse_args())
 
@@ -91,20 +93,26 @@ def main():
     setup_seeds(cfg)
 
     # set after init_distributed_mode() to only log on master.
-    setup_logger()
-
+    if get_rank() == 0:
+        setup_logger()
+        wandb.init(project="drugchat", config=cfg.to_dict(), job_type="training")
+        
     cfg.pretty_print()
 
     task = tasks.setup_task(cfg)
     datasets = task.build_datasets(cfg)
     model = task.build_model(cfg)
-
-    breakpoint()
     runner = get_runner_class(cfg)(
         cfg=cfg, job_id=job_id, task=task, model=model, datasets=datasets
     )
+    
+    if get_rank() == 0:
+        wandb.watch(model, log="all", log_freq=5000)
+        
     runner.train()
-
+    
+    if get_rank() == 0:
+        wandb.finish()
 
 if __name__ == "__main__":
     main()

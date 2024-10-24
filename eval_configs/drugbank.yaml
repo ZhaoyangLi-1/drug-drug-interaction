@@ -9,7 +9,7 @@ datasets:
         name: blip2_image_eval
 model:
   arch: drugchat
-  ckpt: 'your trained checkpoint here'
+  ckpt: 'pipeline/output/exp1/20241023192/checkpoint_best.pth'
   encoder_ckpt: ckpt/gcn_contextpred.pth
   encoder_names:
   - gnn

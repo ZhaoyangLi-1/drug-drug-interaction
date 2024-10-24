@@ -5,9 +5,10 @@ import pickle
 import argparse
 import os
 from rdkit.Chem.rdchem import BondType, BondDir, ChiralType
+from tqdm import tqdm
 
 
-BOND_TYPE = {BondType.SINGLE: 0, BondType.DOUBLE: 1, BondType.TRIPLE: 2, BondType.AROMATIC: 3}
+BOND_TYPE = {BondType.SINGLE: 0, BondType.DOUBLE: 1, BondType.TRIPLE: 2, BondType.AROMATIC: 3, BondType.DATIVE: 4}
 BOND_DIR = {BondDir.NONE: 0, BondDir.ENDUPRIGHT: 1, BondDir.ENDDOWNRIGHT: 2}
 CHI = {ChiralType.CHI_UNSPECIFIED: 0, ChiralType.CHI_TETRAHEDRAL_CW: 1, ChiralType.CHI_TETRAHEDRAL_CCW: 2, ChiralType.CHI_OTHER: 3}
 
@@ -110,20 +111,41 @@ def is_int(x):
 
 def convert_simple_graph_smi(infile, outfile):
     """
-    Convert to a data format that support both graph and images (which is converted to feature dataset later)
+    Convert to a data format that supports both graphs and images (which is converted to feature dataset later).
+    Handles cases where the SMILES string contains two SMILES separated by '|'.
     """
     with open(infile, "rt") as f:
         js = json.load(f)
     out = {}
-    for smi, rec in js.items():
+    for smi, rec in tqdm(js.items(), desc="Processing"):
         if is_int(smi):
             smi, rec = rec
+
         try:
-            graph = smiles2graph(smi)
-        except:
+            # Check if there are two SMILES strings separated by '|'
+            if "|" in smi:
+                smi1, smi2 = smi.split("|")
+                try:
+                    # Convert both SMILES strings to graphs
+                    graph1 = smiles2graph(smi1)
+                except Exception as e:
+                    raise ValueError(f"Error processing graph1 from SMILES '{smi1}': {str(e)}")
+
+                try:
+                    graph2 = smiles2graph(smi2)
+                except Exception as e:
+                    raise ValueError(f"Error processing graph2 from SMILES '{smi2}': {str(e)}")
+                
+                out[smi] = {"graph1": graph1, "graph2": graph2, "QA": rec}
+            else:
+                # Single SMILES string case
+                graph = smiles2graph(smi)
+                out[smi] = {"graph": graph, "QA": rec}
+        except Exception as e:
+            print(f"Error processing SMILES '{smi}': {str(e)}")
             continue
-        out[smi] = {"graph": graph, "QA": rec}
-    print(len(out))
+
+    print(f"Total valid entries: {len(out)}")
 
     with open(outfile, "wb") as f:
         pickle.dump(out, f)

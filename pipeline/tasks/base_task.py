@@ -22,6 +22,7 @@ from pipeline.common.logger import MetricLogger, SmoothedValue
 from pipeline.common.registry import registry
 from pipeline.datasets.data_utils import prepare_sample
 from pipeline.tasks.eval import eval_generation
+import wandb
 
 
 class BaseTask:
@@ -279,6 +280,13 @@ class BaseTask:
 
             metric_logger.update(loss=loss.item())
             metric_logger.update(lr=optimizer.param_groups[0]["lr"])
+            if int(os.environ.get("LOCAL_RANK", 0)) == 0:
+                wandb.log({
+                    "loss": loss.item(),
+                    "learning_rate": optimizer.param_groups[0]["lr"],
+                    "epoch": epoch,
+                    "iteration": i
+                })
 
         # after train_epoch()
         # gather the stats from all processes

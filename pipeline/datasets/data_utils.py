@@ -73,9 +73,9 @@ def apply_to_sample(f, sample):
         elif isinstance(x, dict):
             return {key: _apply(value) for key, value in x.items()}
         elif isinstance(x, list):
-            return [_apply(x) for x in x]
+            return [_apply(value) for value in x]
         elif hasattr(x, "cuda"):
-            return x.cuda()
+            return x.cuda(non_blocking=True)
         else:
             return x
 
@@ -84,7 +84,7 @@ def apply_to_sample(f, sample):
 
 def move_to_cuda(sample):
     def _move_to_cuda(tensor):
-        return tensor.cuda()
+        return tensor.cuda(non_blocking=True)
 
     return apply_to_sample(_move_to_cuda, sample)
 

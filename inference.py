@@ -154,8 +154,11 @@ def infer_QA():
             smi, rec = rec
 
         smi_ = copy.copy(smi)
-        questions = [question for question, answer in rec]
-        answers = [answer for question, answer in rec]
+        # breakpoint()
+        questions = ["You are provided with two drugs: <compound1><compoundHere></compound1> and <compound2><compoundHere></compound2>. Analyze the given compounds and predict the drug interactions between them. You should first classify the interactions as high, moderate, or low, and then provide a detailed description of the mechanisms involved."]
+        answers = [answer for answer in rec]
+        # questions = [question for question, answer in rec]
+        # answers = [answer for question, answer in rec]
         qa_pairs = infer(smi, questions)
         if qa_pairs is None:
             # skip smiles that cannot be converted to image/graph
