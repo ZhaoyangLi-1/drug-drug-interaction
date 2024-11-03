@@ -217,8 +217,9 @@ class DrugChat(BaseModel):
             inputs (dict)
         """
         if "gnn" in self.encoder_names:
-            graph_list = inputs['graph']
-            batch_graph = Batch.from_data_list(graph_list).to(device)
+            batch_graph = inputs['graph']
+            if not isinstance(batch_graph, Batch):
+                batch_graph = Batch.from_data_list(batch_graph).to(device)
             
             if self.low_resource:
                 self.vit_to_cpu()
@@ -270,6 +271,37 @@ class DrugChat(BaseModel):
             feats = []
             for kk, dim in self.feat_dims.items():
                 feat = features[kk]
+                # print(f"Min/Max of inference feat: {feat.min().item()}, {feat.max().item()}")
+                # inter_feat = feat
+                # inter_feat = self.llama_proj[kk].fc1(inter_feat)
+                # if torch.isnan(inter_feat).any() or torch.isinf(inter_feat).any():
+                #     if torch.isnan(inter_feat).any():
+                #         print("NaN detected after fc1")
+                #     if torch.isinf(inter_feat).any():
+                #         print("Inf detected after fc1")
+
+                # inter_feat = self.llama_proj[kk].act(inter_feat)
+                # if torch.isnan(inter_feat).any() or torch.isinf(inter_feat).any():
+                #     print("NaN or Inf detected after activation")
+
+                # inter_feat = self.llama_proj[kk].fc2(inter_feat)
+                # if torch.isnan(inter_feat).any() or torch.isinf(inter_feat).any():
+                #     print("NaN or Inf detected after fc2")
+
+                # inter_feat = self.llama_proj[kk].drop(inter_feat)
+                # if torch.isnan(inter_feat).any() or torch.isinf(inter_feat).any():
+                #     print("NaN or Inf detected after dropout")
+
+                # if torch.isnan(feat).any() or torch.isinf(feat).any():
+                #     print("NaN or Inf found in input features")
+                    
+                # print(f"Checking parameters of self.llama_proj[{kk}] for NaN or Inf:")
+                # for name, param in self.llama_proj[kk].named_parameters():
+                #     if torch.isnan(param).any():
+                #         print(f"Parameter '{name}' contains NaN values.")
+                #     if torch.isinf(param).any():
+                #         print(f"Parameter '{name}' contains Inf values.")
+                #     print(f"Parameter '{name}' is OK (No NaNs/Infs detected).")
                 inputs_tokens = self.llama_proj[kk](feat)
                 feats.append(inputs_tokens)
             img_embeds = torch.cat(feats, dim=1)
@@ -411,7 +443,6 @@ class DrugChat(BaseModel):
         
         loss = outputs.loss
         return {"loss": loss}
-
 
     def gen_(self, embs):
         """
