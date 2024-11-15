@@ -21,6 +21,18 @@ from pipeline.processors import *
 from pipeline.runners import *
 from pipeline.tasks import *
 
+PROMPT_TEMPLATE = (
+    "Two drugs are provided with the following SMILES notations:\n\n"
+    "Drug 1 SMILES: {smiles1}\n"
+    "Drug 2 SMILES: {smiles2}\n\n"
+    "Please analyze the possible interactions between these two drugs and Provide only four things:\n"
+    "Classification of interaction; classify strictly into three (Major, Moderate, Minor) classes, give response as *ans_1:*.\n"
+    "Mechanism of interaction, give response as *ans_2:*.\n\n"
+    "Management, give response as *ans_3:*.\n\n"
+    "Give Advisory terms strictly from ['ADDITIONAL CONTRACEPTION RECOMMENDED', 'ADJUST DOSE', 'ADJUST DOSING INTERVAL', 'CONTRAINDICATED', 'GENERALLY AVOID', 'MONITOR', 'MONITOR CLOSELY'], as *ans_4:*."
+    "Use scientific terminology and provide a detailed but concise response for the mechanism of interaction and management."
+)
+
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Inference")
@@ -150,8 +162,11 @@ def infer_QA():
         t0 = time.time()
         if is_int(smi):
             smi, rec = rec
-        
+        smile_1, smile_2 = smi.split("|")
+        assert smile_1 or smile_2
         smi_ = copy.copy(smi)
+        # "Analyze the given two compounds and predict the drug interactions between them. You should first classify the interactions as high, moderate, or low, and then provide a detailed description of the mechanisms involved."
+        # questions = [PROMPT_TEMPLATE.format(smiles1=smi, smiles2=smi)]
         questions = ["Analyze the given two compounds and predict the drug interactions between them. You should first classify the interactions as high, moderate, or low, and then provide a detailed description of the mechanisms involved."]
         answers = [answer for answer in rec]
         # questions = [question for question, answer in rec]
