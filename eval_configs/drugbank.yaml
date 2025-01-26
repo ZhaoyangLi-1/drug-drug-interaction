@@ -9,7 +9,7 @@ datasets:
         name: blip2_image_eval
 model:
   arch: drugchat
-  ckpt: 'pipeline/output/exp1-30-epochs-lr-2e-5-iters-2500/20241030235/checkpoint_best.pth'
+  ckpt: '/data2/zhaoyang/drugchat/output/mutiple-questions-exp2-30-epochs-lr-2e-5-iters-2300/20241202222/checkpoint_best.pth'
   encoder_names:
   - gnn
   - image_mol

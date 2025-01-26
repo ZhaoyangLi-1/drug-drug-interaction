@@ -156,9 +156,14 @@ class Chat:
         begin_idx = max(0, current_max_len - max_length)
 
         embs = embs[:, begin_idx:]
+        
+        if self.model.llama_tokenizer.pad_token is None:
+            self.model.llama_tokenizer.pad_token = self.model.llama_tokenizer.eos_token
 
         outputs = self.model.llama_model.generate(
             inputs_embeds=embs,
+            attention_mask=torch.ones(embs.shape[:-1], dtype=torch.long, device=self.device),
+            pad_token_id=self.model.llama_tokenizer.pad_token_id,
             max_new_tokens=max_new_tokens,
             stopping_criteria=self.stopping_criteria,
             num_beams=num_beams,
@@ -220,7 +225,7 @@ class Chat:
             return  # issues in creating inputs
         image_emb, _ = self.model.encode_img_infer(inputs, device=self.device, autocast=autocast, autocast_proj=autocast_proj)
         img_list.append(image_emb)
-        conv.append_message(conv.roles[0], "<compound1><compoundHere></compound1> <compound2><compoundHere></compound2>")
+        conv.append_message(conv.roles[0], "You are provided with two drugs: <compound1><compoundHere></compound1> <compound2><compoundHere></compound2>. ")
         msg = "Received."
         # self.conv.append_message(self.conv.roles[1], msg)
         return msg

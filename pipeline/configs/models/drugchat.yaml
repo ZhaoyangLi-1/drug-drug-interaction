@@ -13,7 +13,7 @@ model:
   num_query_token: 32
 
   # Vicuna
-  llama_model: "vicuna-weights"
+  llama_model: "/data2/zhaoyang/vicuna-weights"
 
   # generation configs
   prompt: ""

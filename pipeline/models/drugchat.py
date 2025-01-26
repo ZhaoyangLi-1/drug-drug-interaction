@@ -8,7 +8,7 @@ import torch.nn as nn
 from pipeline.common.registry import registry
 from pipeline.models.utils import disabled_train, Mlp
 from pipeline.models.modeling_llama import LlamaForCausalLM
-from transformers import LlamaTokenizer
+from transformers import LlamaTokenizerF
 
 from pipeline.models.gnn import GNN
 import contextlib
@@ -328,7 +328,6 @@ class DrugChat(BaseModel):
     def prompt_wrap(self, img_embeds1, img_embeds2, atts_img1, atts_img2, prompts):
         if prompts:
             batch_size = img_embeds1.shape[0]
-
             ps = [prompt.split('<compoundHere>') for prompt in prompts]
             p_before, p_between, p_after = list(zip(*ps))
             assert all(len(p) == 3 for p in ps), "Each prompt must contain two <compoundHere> placeholders."
@@ -388,8 +387,7 @@ class DrugChat(BaseModel):
         
         assert 'question' in samples
         if 'question' in samples and samples['question'] is not None:
-            vqa_prompt = ["###Human: <compound1><compoundHere></compound1> " +
-                        "<compound2><compoundHere></compound2> " + qq + "###Assistant: "
+            vqa_prompt = ["You are provided with two drugs: <compound1><compoundHere></compound1> and <compound2><compoundHere></compound2>. " + qq + "###Assistant: "
                         for qq in samples['question']]
             combined_img_embeds, combined_atts_img = self.prompt_wrap(
                 img_embeds1, img_embeds2, atts_img1, atts_img2, vqa_prompt

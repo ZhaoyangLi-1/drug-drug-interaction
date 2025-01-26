@@ -49,14 +49,15 @@ run:
 
   weight_decay: 0.03
   max_epoch: 30
-  iters_per_epoch: 2500
+  iters_per_epoch: 2300
   batch_size_train: 4
   batch_size_eval: 4
   num_workers: 1
-  warmup_steps: 2500
+  warmup_steps: 2300
+  
 
   seed: 42
-  output_dir: "output/exp1-40-epochs-lr-2e-5-iters-2500"
+  output_dir: "/data2/zhaoyang/drugchat/output/mutiple-questions-exp2-30-epochs-lr-2e-5-iters-2300"
 
   amp: True
   resume_ckpt_path: null
