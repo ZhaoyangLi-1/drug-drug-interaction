@@ -8,14 +8,14 @@ from torch.utils.data.dataloader import default_collate
 from torch.utils.data import Dataset, ConcatDataset
 from torchvision import transforms
 from torch_geometric.data import Data, Batch
-
+from tqdm import tqdm
 
 class MultimodalDataset(Dataset):
     def __init__(self, datapath, use_image=True, use_graph=False, image_size=224, is_train=False) -> None:
         super().__init__()
         self.use_image = use_image
         self.use_graph = use_graph
-        jsonpath = os.path.join(datapath, "new_smiles_img_qa.json")
+        jsonpath = os.path.join(datapath, "smiles_img_qa.json")
         print(f"Using {jsonpath=}")
         with open(jsonpath, "rt") as f:
             meta = json.load(f)
@@ -43,7 +43,7 @@ class MultimodalDataset(Dataset):
         self.images = {}
         self.data = []
         self.graphs = {}
-        for idx, rec in meta.items():
+        for idx, rec in tqdm(meta.items(), desc="Loading data..."):
             if use_image:
                 img_file_1 = 'img_{}_0.png'.format(idx)
                 img_file_2 = 'img_{}_1.png'.format(idx)
@@ -68,8 +68,9 @@ class MultimodalDataset(Dataset):
     
     def __getitem__(self, index):
         idx, qa_pair = self.data[index]
-        out = {"question": qa_pair[0], "text_input": str(qa_pair[1])}
-        # out = {"question": None, "text_input": str(qa_pair[0])}
+        # out = {"question": qa_pair[0], "text_input": str(qa_pair[1])}
+        out = {"question": None, "text_input": str(qa_pair[0])}
+        # out = {"text_input": str(qa_pair[0])}
         if self.use_image:
             imgs = [self.transforms(img) for img in self.images[idx]]
             out.update({"img": imgs})
@@ -79,11 +80,11 @@ class MultimodalDataset(Dataset):
     
     @staticmethod
     def collater(samples):
-        # if samples[0].get("question") is not None:
-        #     qq = [x["question"] for x in samples]
-        # else:
-        #     qq = Non
-        qq = [x["question"] for x in samples]
+        if samples[0].get("question") is not None:
+            qq = [x["question"] for x in samples]
+        else:
+            qq = None
+        # qq = [x["question"] for x in samples]
         aa = [x["text_input"] for x in samples]
         out = {"question": qq, "text_input": aa}
         # print(f"Out: {out}")

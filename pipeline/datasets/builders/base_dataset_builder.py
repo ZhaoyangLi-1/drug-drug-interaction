@@ -253,11 +253,10 @@ class BaseBuilder(BaseDatasetBuilder):
 
     def build(self):
         # self.build_processors()
-
         build_info = self.config.build_info
 
         datasets = dict()
-        split = "train"
+        # split = "train"
 
         # create datasets
         dataset_cls = self.train_dataset_cls

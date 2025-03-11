@@ -115,6 +115,7 @@ def main():
     
     if get_rank() == 0:
         wandb.finish()
+        
 
 if __name__ == "__main__":
     main()
