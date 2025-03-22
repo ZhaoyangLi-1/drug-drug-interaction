@@ -104,9 +104,9 @@ def compute_metrics(y_true, y_pred, data_type):
 
     metrics = {
         "accuracy": accuracy,
-        "f1_macro_with_invalid": f1_macro,
-        "precision_macro_with_invalid": precision_macro,
-        "recall_macro_with_invalid": recall_macro,
+        "f1_weighted_with_invalid": f1_macro,
+        "precision_weighted_with_invalid": precision_macro,
+        "recall_weighted_with_invalid": recall_macro,
         "invalid_predictions_count": invalid_predictions_count
     }
 
@@ -184,8 +184,61 @@ def meteor_score(reference, hypothesis):
 
     return score
 
+def eval_new_data(data, bleu_n_list=[1, 2, 3, 4]):
+    results = {}
+    similarities = []
+    meteor_scores = []
+    bleu_scores = {n: [] for n in bleu_n_list}
+    
+    for smiles, content in tqdm(data.items(), desc="Evaluating"):
+        query, ground_truth, predicted_text = content
+        ground_truth_text = ground_truth.strip() if ground_truth else ""
+        predicted_text = predicted_text.strip() if predicted_text else ""
+        
+        embedding_ground_truth = model.encode(ground_truth_text, convert_to_tensor=True).to(device)
+        embedding_predicted = model.encode(predicted_text, convert_to_tensor=True).to(device)
 
-def eval(data):
+        similarity = semantic_similarity(embedding_ground_truth, embedding_predicted).item()
+        similarities.append(similarity)
+        
+        meteor = meteor_score(ground_truth_text, predicted_text)
+        meteor_scores.append(meteor)
+        
+        if smiles not in results:
+            results[smiles] = {}
+                    
+        results[smiles] = {
+            "query": query,
+            "ground_truth": ground_truth_text,
+            "predicted": predicted_text,
+            "semantic_similarity": similarity,
+            "meteor": meteor
+        }
+        
+        for n in bleu_n_list:
+            bleu_n = bleu_n_score(predicted_text, ground_truth_text, n)
+            bleu_scores[n].append(bleu_n)
+            results[smiles][f"bleu_{n}"] = bleu_n
+
+    # Compute mean values
+    mean_similarity = np.mean(similarities) if similarities else 0
+    mean_meteor = np.mean(meteor_scores) if meteor_scores else 0
+    mean_bleu_scores = {n: np.mean(bleu_scores[n]) if bleu_scores[n] else 0 for n in bleu_n_list}
+
+    mean_results = {
+        "mean_semantic_similarity": mean_similarity,
+        "mean_meteor": mean_meteor,
+    }
+    
+    for n in bleu_n_list:
+        mean_results[f"mean_bleu_{n}"] = mean_bleu_scores[n]
+    
+    results["mean_scores"] = mean_results
+
+    return results
+            
+
+def eval_4_types(data):
     
     def preprocess_interaction_type(texts):
         ret = []
@@ -361,22 +414,22 @@ def process_data_from_gpt(file_path, smiles_pairs_ground_truth, ours_results):
 def main(args):
     # with open(args.results_file, 'r') as f:
     #     ours_data = json.load(f)
-    with open("/home/zhaoyang/project/drug-drug-interaction/eval_results/30-epochs-lr-2e-5-iter-2300-results.json", 'r') as f:
+    with open("/home/zhaoyang/project/drug-drug-interaction/eval_results/new/10-epochs-lr-1e-5-iter-2206-results.json", 'r') as f:
         ours_data = json.load(f)
     
     num_entries = len(ours_data)
     # print(f"Loaded {num_entries} entries from {args.results_file}")
     
-    ours_results = eval(ours_data)
-    with open(os.path.join(CURRENT_DIR, "eval_results", "ours.json"), "w") as f:
+    ours_results = eval_new_data(ours_data)
+    with open(os.path.join(CURRENT_DIR, "eval_results", "new", "ours.json"), "w") as f:
         json.dump(ours_results, f, indent=4)
     
-    gpt_data_path = os.path.join(CURRENT_DIR, "eval_results", "Drug_Drug_Interaction_GPT.xlsx")
-    smiles_pairs_ground_truth = gather_ground_truth_from_smiles(ours_data)
-    gpt_data = process_data_from_gpt(gpt_data_path, smiles_pairs_ground_truth, ours_data)
-    gpt_results = eval(gpt_data)
-    with open(os.path.join(CURRENT_DIR, "eval_results", "gpt_results.json"), "w") as f:
-        json.dump(gpt_results, f, indent=4)
+    # gpt_data_path = os.path.join(CURRENT_DIR, "eval_results", "Drug_Drug_Interaction_GPT.xlsx")
+    # smiles_pairs_ground_truth = gather_ground_truth_from_smiles(ours_data)
+    # gpt_data = process_data_from_gpt(gpt_data_path, smiles_pairs_ground_truth, ours_data)
+    # gpt_results = eval(gpt_data)
+    # with open(os.path.join(CURRENT_DIR, "eval_results", "gpt_results.json"), "w") as f:
+    #     json.dump(gpt_results, f, indent=4)
     
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

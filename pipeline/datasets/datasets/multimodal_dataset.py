@@ -43,6 +43,7 @@ class MultimodalDataset(Dataset):
         self.images = {}
         self.data = []
         self.graphs = {}
+        self.smiles = {}
         for idx, rec in tqdm(meta.items(), desc="Loading data..."):
             if use_image:
                 img_file_1 = 'img_{}_0.png'.format(idx)
@@ -54,6 +55,7 @@ class MultimodalDataset(Dataset):
                 # img = self.transforms(image)
                 self.images[idx] = [image1, image2]
             smi, qa = rec
+            self.smiles[idx] = smi
             if use_graph:
                 g1 = graphs[smi]["graph1"]
                 g2 = graphs[smi]["graph2"]
@@ -64,12 +66,12 @@ class MultimodalDataset(Dataset):
             self.data.extend(qa)
 
     def __len__(self):
-        return len(self.data)
+        return len(self.data)       
     
     def __getitem__(self, index):
         idx, qa_pair = self.data[index]
         # out = {"question": qa_pair[0], "text_input": str(qa_pair[1])}
-        out = {"question": None, "text_input": str(qa_pair[0])}
+        out = {"smiles":self.smiles[idx],"question": None, "text_input": str(qa_pair[0])}
         # out = {"text_input": str(qa_pair[0])}
         if self.use_image:
             imgs = [self.transforms(img) for img in self.images[idx]]
@@ -86,7 +88,8 @@ class MultimodalDataset(Dataset):
             qq = None
         # qq = [x["question"] for x in samples]
         aa = [x["text_input"] for x in samples]
-        out = {"question": qq, "text_input": aa}
+        smiles_list = [x["smiles"] for x in samples]
+        out = {"question": qq, "text_input": aa, "smiles": smiles_list}
         # print(f"Out: {out}")
         # Handle images if they exist
         if "img" in samples[0]:

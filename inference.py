@@ -21,7 +21,7 @@ from pipeline.processors import *
 from pipeline.runners import *
 from pipeline.tasks import *
 
-PROMPT_TEMPLATE = ""
+PROMPT_TEMPLATE = "You are provided with two drugs: <compound1><compoundHere></compound1> and <compound2><compoundHere></compound2>. Analyze the given compounds and predict the drug interactions between them."
 
 
 def parse_args():
@@ -33,6 +33,7 @@ def parse_args():
     parser.add_argument("--temperature", type=float, default=1, help="specify the temperature for text generation.")
     parser.add_argument("--out_file", type=str, default="xxx.json", help="specify the output file.")
     parser.add_argument("--in_file", type=str, default="aaa.json", help="specify the output file.")
+    # parser.add_argument("--batch_size", type=int, default=1, help="specify the batch size for inference.")
     parser.add_argument(
         "--options",
         nargs="+",
@@ -66,6 +67,7 @@ use_amp = cfg.run_cfg.get("amp", False)
 amp_encoder = cfg.run_cfg.get("amp_encoder", use_amp)
 amp_proj = cfg.run_cfg.get("amp_proj", use_amp)
 
+# batch_size = args.batch_size
 model_config = cfg.model_cfg
 model_config.device_8bit = args.gpu_id
 model_cls = registry.get_model_class(model_config.arch)
@@ -155,28 +157,18 @@ def infer_QA():
         smile_1, smile_2 = smi.split("|")
         assert smile_1 or smile_2
         smi_ = copy.copy(smi)
-        # "Analyze the given two compounds and predict the drug interactions between them. You should first classify the interactions as high, moderate, or low, and then provide a detailed description of the mechanisms involved."
-        # questions = [PROMPT_TEMPLATE.format(smiles1=smi, smiles2=smi)]
-        #questions = ["Analyze the given two compounds and predict the drug interactions between them. You should first classify the interactions as high, moderate, or low, and then provide a detailed description of the mechanisms involved."]
-        # breakpoint()
-        questions = [question for question, _ in rec]
-        answers = [answer for _, answer in rec]
-        # questions = [question for question, answer in rec]
-        # answers = [answer for question, answer in rec]
+        questions = ["You are provided with two drugs: <compound1><compoundHere></compound1> and <compound2><compoundHere></compound2>. Analyze the given compounds and predict the drug interactions between them."]
+        answers = [answer[0] for answer in rec]
         qa_pairs = infer(smi, questions)
         if qa_pairs is None:
-            # skip smiles that cannot be converted to image/graph
             continue
         assert len(qa_pairs) == len(answers)
         for ans, qa in zip(answers, qa_pairs):
             qa.insert(1, ans)
         out[smi_] = qa_pairs
-        # print(smi_, "============ used time:", time.time() - t0)
-
-        # for qa in qa_pairs:
-        #     print(qa)
         with open(args.out_file, "wt") as f:
             json.dump(out, f, indent=2)
 
 
 infer_QA()
+
