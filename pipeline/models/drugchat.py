@@ -212,10 +212,6 @@ class DrugChat(BaseModel):
             self.image_mol.float()
     
     def encode_img(self, inputs, device, do_proj=True):
-        """
-        Args:
-            inputs (dict)
-        """
         if "gnn" in self.encoder_names:
             batch_graph = inputs['graph']
             if not isinstance(batch_graph, Batch):
@@ -235,7 +231,6 @@ class DrugChat(BaseModel):
 
         if "image_mol" in self.encoder_names:
             image_batch = inputs['image'].to(device)
-            
             if self.low_resource:
                 self.vit_to_cpu()
                 image_batch = image_batch.to("cpu")
@@ -253,9 +248,6 @@ class DrugChat(BaseModel):
 
 
     def encode_img_infer(self, inputs, device, autocast=False, autocast_proj=False):
-        """
-        Need this function to fix the inference data casting issues
-        """
         with torch.cuda.amp.autocast(autocast):
             features = self.encode_img(inputs, device, do_proj=False)
         with torch.cuda.amp.autocast(autocast_proj):
@@ -263,45 +255,10 @@ class DrugChat(BaseModel):
         return out
 
     def proj_feat(self, features, device):
-        """
-        Args:
-            features (dict)
-        """
         if self.feat_dims is not None:
             feats = []
-            for kk, dim in self.feat_dims.items():
+            for kk, _ in self.feat_dims.items():
                 feat = features[kk]
-                # print(f"Min/Max of inference feat: {feat.min().item()}, {feat.max().item()}")
-                # inter_feat = feat
-                # inter_feat = self.llama_proj[kk].fc1(inter_feat)
-                # if torch.isnan(inter_feat).any() or torch.isinf(inter_feat).any():
-                #     if torch.isnan(inter_feat).any():
-                #         print("NaN detected after fc1")
-                #     if torch.isinf(inter_feat).any():
-                #         print("Inf detected after fc1")
-
-                # inter_feat = self.llama_proj[kk].act(inter_feat)
-                # if torch.isnan(inter_feat).any() or torch.isinf(inter_feat).any():
-                #     print("NaN or Inf detected after activation")
-
-                # inter_feat = self.llama_proj[kk].fc2(inter_feat)
-                # if torch.isnan(inter_feat).any() or torch.isinf(inter_feat).any():
-                #     print("NaN or Inf detected after fc2")
-
-                # inter_feat = self.llama_proj[kk].drop(inter_feat)
-                # if torch.isnan(inter_feat).any() or torch.isinf(inter_feat).any():
-                #     print("NaN or Inf detected after dropout")
-
-                # if torch.isnan(feat).any() or torch.isinf(feat).any():
-                #     print("NaN or Inf found in input features")
-                    
-                # print(f"Checking parameters of self.llama_proj[{kk}] for NaN or Inf:")
-                # for name, param in self.llama_proj[kk].named_parameters():
-                #     if torch.isnan(param).any():
-                #         print(f"Parameter '{name}' contains NaN values.")
-                #     if torch.isinf(param).any():
-                #         print(f"Parameter '{name}' contains Inf values.")
-                #     print(f"Parameter '{name}' is OK (No NaNs/Infs detected).")
                 inputs_tokens = self.llama_proj[kk](feat)
                 feats.append(inputs_tokens)
             img_embeds = torch.cat(feats, dim=1)
