@@ -19,25 +19,16 @@ from nltk.stem import PorterStemmer
 from sklearn.preprocessing import MultiLabelBinarizer
 from evaluate import load
 import numpy as np
+import csv
 from sklearn.metrics import f1_score, accuracy_score, precision_score, recall_score
+rouge = load("rouge")
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 # device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
 model = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2').to(device)
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 
-PROMPT_TEMPLATE = (
-    "Two drugs are provided with the following SMILES notations:\n\n"
-    "Drug 1 SMILES: {smiles1}\n"
-    "Drug 2 SMILES: {smiles2}\n\n"
-    "Please analyze the possible interactions between these two drugs and Provide only four things:\n"
-    "Classification of interaction; classify strictly into three (Major, Moderate, Minor) classes, give response as *ans_1:*.\n"
-    "Mechanism of interaction, give response as *ans_2:*.\n\n"
-    "Management, give response as *ans_3:*.\n\n"
-    "Give Advisory terms strictly from ['ADDITIONAL CONTRACEPTION RECOMMENDED', 'ADJUST DOSE', 'ADJUST DOSING INTERVAL', 'CONTRAINDICATED', 'GENERALLY AVOID', 'MONITOR', 'MONITOR CLOSELY'], as *ans_4:*."
-    "Use scientific terminology and provide a detailed but concise response for the mechanism of interaction and management."
-)
-
+PROMPT_TEMPLATE = "You are provided with SMILES of two drugs:\nSMILES 1: {smile1}\nSMILES 2: {smile2}\nBased on the SMILES of these two drugs, describe their interaction mechanism in one sentence, assuming typical pharmacological behavior. Do not include any reasoning or uncertainty."
 
 advisory_terms = ["ADDITIONAL CONTRACEPTION RECOMMENDED", "ADJUST DOSE", "ADJUST DOSING INTERVAL", "CONTRAINDICATED", "GENERALLY AVOID", "MONITOR", "MONITOR CLOSELY", "NONE"]
 interaction_types = ["major", "moderate", "minor"]
@@ -184,57 +175,68 @@ def meteor_score(reference, hypothesis):
 
     return score
 
-def eval_new_data(data, bleu_n_list=[1, 2, 3, 4]):
+def eval_new_data(data, bleu_n_list=[1,2,3,4]):
     results = {}
-    similarities = []
-    meteor_scores = []
+    sims = []
+    meteors = []
     bleu_scores = {n: [] for n in bleu_n_list}
-    
-    for smiles, content in tqdm(data.items(), desc="Evaluating"):
-        query, ground_truth, predicted_text = content
-        ground_truth_text = ground_truth.strip() if ground_truth else ""
-        predicted_text = predicted_text.strip() if predicted_text else ""
-        
-        embedding_ground_truth = model.encode(ground_truth_text, convert_to_tensor=True).to(device)
-        embedding_predicted = model.encode(predicted_text, convert_to_tensor=True).to(device)
+    rouge1_scores = []
+    rougel_scores = []
 
-        similarity = semantic_similarity(embedding_ground_truth, embedding_predicted).item()
-        similarities.append(similarity)
-        
-        meteor = meteor_score(ground_truth_text, predicted_text)
-        meteor_scores.append(meteor)
-        
-        if smiles not in results:
-            results[smiles] = {}
-                    
+    for smiles, entry in tqdm(data.items(), desc="Evaluating"):
+        query, gt, pred = entry
+        gt = gt.strip() if gt else ""
+        pred = pred.strip() if pred else ""
+
+        emb_gt = model.encode(gt, convert_to_tensor=True)
+        emb_pred = model.encode(pred, convert_to_tensor=True)
+        sim = semantic_similarity(emb_gt, emb_pred).item()
+        sims.append(sim)
+
+        met = meteor_score(gt, pred)
+        meteors.append(met)
+
         results[smiles] = {
             "query": query,
-            "ground_truth": ground_truth_text,
-            "predicted": predicted_text,
-            "semantic_similarity": similarity,
-            "meteor": meteor
+            "ground_truth": gt,
+            "predicted": pred,
+            "semantic_similarity": sim,
+            "meteor": met
         }
-        
-        for n in bleu_n_list:
-            bleu_n = bleu_n_score(predicted_text, ground_truth_text, n)
-            bleu_scores[n].append(bleu_n)
-            results[smiles][f"bleu_{n}"] = bleu_n
 
-    # Compute mean values
-    mean_similarity = np.mean(similarities) if similarities else 0
-    mean_meteor = np.mean(meteor_scores) if meteor_scores else 0
-    mean_bleu_scores = {n: np.mean(bleu_scores[n]) if bleu_scores[n] else 0 for n in bleu_n_list}
+        for n in bleu_n_list:
+            b = bleu_n_score(pred, gt, n)
+            bleu_scores[n].append(b)
+            results[smiles][f"bleu_{n}"] = b
+
+        # ROUGE
+        rc = rouge.compute(
+            predictions=[pred],
+            references=[gt],
+            rouge_types=["rouge1","rougeL"]
+        )
+        r1 = rc["rouge1"]
+        rL = rc["rougeL"]
+        rouge1_scores.append(r1)
+        rougel_scores.append(rL)
+        results[smiles]["rouge_1"] = r1
+        results[smiles]["rouge_L"] = rL
+
+    # Mean scores
+    mean_s = np.mean(sims) if sims else 0
+    mean_m = np.mean(meteors) if meteors else 0
+    mean_bleu = {n: np.mean(bleu_scores[n]) if bleu_scores[n] else 0 for n in bleu_n_list}
+    mean_r1 = np.mean(rouge1_scores) if rouge1_scores else 0
+    mean_rL = np.mean(rougel_scores) if rougel_scores else 0
 
     mean_results = {
-        "mean_semantic_similarity": mean_similarity,
-        "mean_meteor": mean_meteor,
+        "mean_semantic_similarity": mean_s,
+        "mean_meteor": mean_m,
+        **{f"mean_bleu_{n}": mean_bleu[n] for n in bleu_n_list},
+        "mean_rouge_1": mean_r1,
+        "mean_rouge_L": mean_rL
     }
-    
-    for n in bleu_n_list:
-        mean_results[f"mean_bleu_{n}"] = mean_bleu_scores[n]
-    
     results["mean_scores"] = mean_results
-
     return results
             
 
@@ -409,30 +411,68 @@ def process_data_from_gpt(file_path, smiles_pairs_ground_truth, ours_results):
             ]
         ] 
     return results
+
+
+def preprocess_gpt_data_for_new_dataset(gpt_data_path):
+    gpt_data = {}
+    with open(gpt_data_path, mode='r', newline='') as file:
+        reader = csv.reader(file)
+        next(reader)
+        for row in reader:
+            smiles = "|".join(row[:2])
+            ground_truth = row[2]
+            classification_interaction = row[3]
+            prompt = PROMPT_TEMPLATE.format(smile1=row[0], smile2=row[1])
+            if smiles not in gpt_data:
+                gpt_data[smiles] = [
+                    prompt,
+                    ground_truth,
+                    classification_interaction
+                ]
+    return gpt_data
     
     
 def main(args):
-    # with open(args.results_file, 'r') as f:
-    #     ours_data = json.load(f)
-    with open("/home/zhaoyang/project/drug-drug-interaction/eval_results/new/10-epochs-lr-1e-5-iter-2206-results.json", 'r') as f:
+    with open(os.path.join(CURRENT_DIR, "eval_results/new/10-epochs-lr-1e-5-iter-2206-results.json"), 'r') as f:
         ours_data = json.load(f)
-    
-    num_entries = len(ours_data)
-    # print(f"Loaded {num_entries} entries from {args.results_file}")
-    
+
     ours_results = eval_new_data(ours_data)
-    with open(os.path.join(CURRENT_DIR, "eval_results", "new", "ours.json"), "w") as f:
+    with open(os.path.join(CURRENT_DIR, "eval_results/new/ours.json"), 'w') as f:
         json.dump(ours_results, f, indent=4)
-    
-    # gpt_data_path = os.path.join(CURRENT_DIR, "eval_results", "Drug_Drug_Interaction_GPT.xlsx")
-    # smiles_pairs_ground_truth = gather_ground_truth_from_smiles(ours_data)
-    # gpt_data = process_data_from_gpt(gpt_data_path, smiles_pairs_ground_truth, ours_data)
+
+    # GPT results
+    # smiles_gt = gather_ground_truth_from_smiles(ours_data)
+    # gpt_data = process_data_from_gpt(
+    #     os.path.join(CURRENT_DIR, "eval_results/Drug_Drug_Interaction_GPT.xlsx"),
+    #     smiles_gt, ours_data
+    # )
     # gpt_results = eval(gpt_data)
-    # with open(os.path.join(CURRENT_DIR, "eval_results", "gpt_results.json"), "w") as f:
+    # with open(os.path.join(CURRENT_DIR, "eval_results/new/gpt_results.json"), 'w') as f:
     #     json.dump(gpt_results, f, indent=4)
+
+    # Test set
+    test_data = preprocess_gpt_data_for_new_dataset(
+        os.path.join(CURRENT_DIR, "eval_results/new/gpt_test_results.csv")
+    )
+    test_results = eval_new_data(test_data)
+    with open(os.path.join(CURRENT_DIR, "eval_results/new/gpt_results.json"), 'w') as f:
+        json.dump(test_results, f, indent=4)
+
+    # Apollo-MoE-7B
+    with open(os.path.join(CURRENT_DIR, "eval_results/new/Apollo-MoE-7B_results.json"), 'r') as f:
+        mmed = json.load(f)
+    mmed_eval = eval_new_data(mmed)
+    with open(os.path.join(CURRENT_DIR, "eval_results/new/Apollo-MoE-7B_results_eval.json"), 'w') as f:
+        json.dump(mmed_eval, f, indent=4)
     
+    # MMed-Llama-3-8B_results_eval
+    with open(os.path.join(CURRENT_DIR, "eval_results/new/MMed-Llama-3-8B_results.json"), 'r') as f:
+        mmed = json.load(f)
+    mmed_eval = eval_new_data(mmed)
+    with open(os.path.join(CURRENT_DIR, "eval_results/new/MMed-Llama-3-8B_results_eval.json"), 'w') as f:
+        json.dump(mmed_eval, f, indent=4)
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    # parser.add_argument("--results_file", type=str, required=True, help="Path to the JSON file containing the results to evaluate")
     args = parser.parse_args()
     main(args)

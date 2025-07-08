@@ -342,7 +342,7 @@ class DrugChat(BaseModel):
         img_embeds1, atts_img1 = self.encode_img(inputs1, device)
         img_embeds2, atts_img2 = self.encode_img(inputs2, device)
         # assert 'question' in samples
-        if 'question' in samples and samples['question'] is not None:
+        if samples['question'] is not None:
             vqa_prompt = ["You are provided with two drugs: <compound1><compoundHere></compound1> and <compound2><compoundHere></compound2>. " + qq + "###Assistant: "
                         for qq in samples['question']]
             combined_img_embeds, combined_atts_img = self.prompt_wrap(

@@ -31,8 +31,8 @@ def parse_args():
     parser.add_argument("--num_beams", type=int, default=1, help="specify the num_beams for text generation.")
     parser.add_argument("--max_new_tokens", type=int, default=300)
     parser.add_argument("--temperature", type=float, default=1, help="specify the temperature for text generation.")
-    parser.add_argument("--out_file", type=str, default="xxx.json", help="specify the output file.")
-    parser.add_argument("--in_file", type=str, default="aaa.json", help="specify the output file.")
+    parser.add_argument("--out_file", type=str, default="/home/zhaoyang/project/drug-drug-interaction/example.json", help="specify the output file.")
+    parser.add_argument("--in_file", type=str, default="/home/zhaoyang/project/drug-drug-interaction/drug_drug_data/drugs_dot_com/test/smiles_img_qa.json", help="specify the output file.")
     # parser.add_argument("--batch_size", type=int, default=1, help="specify the batch size for inference.")
     parser.add_argument(
         "--options",
@@ -157,9 +157,11 @@ def infer_QA():
         smile_1, smile_2 = smi.split("|")
         assert smile_1 or smile_2
         smi_ = copy.copy(smi)
-        questions = ["You are provided with two drugs: <compound1><compoundHere></compound1> and <compound2><compoundHere></compound2>. Analyze the given compounds and predict the drug interactions between them."]
+        # questions = ["What are indications of two compounds?", "What are their pharmacodynamics?", "What knid of cells does these two compounds to release insulin?", "What side effects do compounds and how to deal with them?"]
+        questions = ["What are indications of two compounds?"]
         answers = [answer[0] for answer in rec]
         qa_pairs = infer(smi, questions)
+        breakpoint()
         if qa_pairs is None:
             continue
         assert len(qa_pairs) == len(answers)
@@ -168,7 +170,6 @@ def infer_QA():
         out[smi_] = qa_pairs
         with open(args.out_file, "wt") as f:
             json.dump(out, f, indent=2)
-
 
 infer_QA()
 

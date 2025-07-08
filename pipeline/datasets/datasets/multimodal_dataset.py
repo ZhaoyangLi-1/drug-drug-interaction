@@ -70,8 +70,15 @@ class MultimodalDataset(Dataset):
     
     def __getitem__(self, index):
         idx, qa_pair = self.data[index]
+        if len(qa_pair) == 2:
+            question = str(qa_pair[0])
+            text_input = qa_pair[1]
+        else:
+            question = None
+            text_input = qa_pair[0]
         # out = {"question": qa_pair[0], "text_input": str(qa_pair[1])}
-        out = {"smiles":self.smiles[idx],"question": None, "text_input": str(qa_pair[0])}
+        out = {"smiles":self.smiles[idx],"question": question, "text_input": str(text_input)}
+        # print(f"Out: {out}")
         # out = {"text_input": str(qa_pair[0])}
         if self.use_image:
             imgs = [self.transforms(img) for img in self.images[idx]]

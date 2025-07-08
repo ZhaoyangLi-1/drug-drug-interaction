@@ -40,21 +40,18 @@ import wandb
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Training")
-
-    # parser.add_argument("--cfg-path", required=True, help="path to configuration file.")
-    parser.add_argument("--cfg-path", type=str, default="/home/zhaoyang/project/drugchat/train_configs/drugchat.yaml", help="path to configuration file.")
+    parser.add_argument(
+        "--cfg-path", 
+        type=str, 
+        default="/home/zhaoyang/project/drug-drug-interaction/train_configs/drugchat.yaml", 
+        help="path to configuration file."
+    )
     parser.add_argument(
         "--options",
         nargs="+",
-        help="override some settings in the used config, the key-value pair "
-        "in xxx=yyy format will be merged into config file (deprecate), "
-        "change to --cfg-options instead.",
+        help="override some settings in the used config, the key-value pair in xxx=yyy format will be merged into config file.",
     )
-
     args = parser.parse_args()
-    # if 'LOCAL_RANK' not in os.environ:
-    #     os.environ['LOCAL_RANK'] = str(args.local_rank)
-
     return args
 
 
@@ -81,21 +78,16 @@ def get_runner_class(cfg):
 def main():
     # allow auto-dl completes on main process without timeout when using NCCL backend.
     # os.environ["NCCL_BLOCKING_WAIT"] = "1"
-
     # set before init_distributed_mode() to ensure the same job_id shared across all ranks.
     job_id = now()
-    
 
     cfg = Config(parse_args())
-
     init_distributed_mode(cfg.run_cfg)
-
     setup_seeds(cfg)
-
-    # set after init_distributed_mode() to only log on master.
-    cfg_dict = cfg.to_dict()
-    wandb_run_name = cfg_dict['run']['output_dir'].split('/')[-1]
+   
     if get_rank() == 0:
+        cfg_dict = cfg.to_dict()
+        wandb_run_name = cfg_dict['run']['output_dir'].split('/')[-1]
         setup_logger()
         wandb.init(project="drugchat", config=cfg_dict, name=wandb_run_name, job_type="training")
         
